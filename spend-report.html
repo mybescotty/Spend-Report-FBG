@@ -187,21 +187,28 @@
 
     </div><!-- /left-panel -->
 
-    <!-- RIGHT PANEL: table -->
-    <div id="right-panel" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;overflow:hidden">
-      <div style="flex:1;min-height:0;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:auto">
-        <div id="table-container" class="p-3">
-          <p style="color:#94a3b8;font-size:13px;text-align:center;padding:40px 0">Upload both files to generate the spend report.</p>
-        </div>
+    <!-- RIGHT PANEL: table only — chart is a modal -->
+    <div id="right-panel" style="flex:1;min-width:0;overflow:auto;background:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+      <div id="table-container" class="p-3">
+        <p style="color:#94a3b8;font-size:13px;text-align:center;padding:40px 0">Upload both files to generate the spend report.</p>
       </div>
-      <section id="chart-section" style="display:none;background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);flex-shrink:0">
-        <h2 style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;margin-bottom:8px">Actual vs Budget by Spend Group</h2>
-        <canvas id="spend-chart"></canvas>
-      </section>
     </div><!-- /right-panel -->
 
   </div><!-- /main-layout -->
 
+</div>
+
+<!-- Chart modal -->
+<div id="chart-modal" style="display:none" class="modal-overlay">
+  <div class="modal-box" style="max-width:960px">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+      <h3 class="font-semibold text-slate-800 text-sm">Actual vs Budget by Spend Group</h3>
+      <button id="chart-modal-close" class="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none">&times;</button>
+    </div>
+    <div class="modal-body" style="padding:16px;max-height:70vh">
+      <canvas id="spend-chart"></canvas>
+    </div>
+  </div>
 </div>
 
 <!-- Drill-down modal -->
@@ -478,21 +485,25 @@ function renderSummaryCards(totalActual, totalBudget) {
   document.getElementById('card-pct').textContent = pct;
 }
 
+function closeChartModal() {
+  STATE.showChart = false;
+  document.getElementById('chart-modal').style.display = 'none';
+  const btn = document.getElementById('chart-toggle-btn');
+  btn.textContent = '📊 Chart'; btn.style.background = ''; btn.style.color = '';
+  if (STATE.chartInstance) { STATE.chartInstance.destroy(); STATE.chartInstance = null; }
+}
 function toggleChart() {
   STATE.showChart = !STATE.showChart;
   const btn = document.getElementById('chart-toggle-btn');
   btn.textContent = STATE.showChart ? '📊 Hide Chart' : '📊 Chart';
   btn.style.background = STATE.showChart ? '#1e40af' : '';
   btn.style.color = STATE.showChart ? '#fff' : '';
-  if (STATE.showChart) refreshView(); else {
-    document.getElementById('chart-section').style.display = 'none';
-    if (STATE.chartInstance) { STATE.chartInstance.destroy(); STATE.chartInstance = null; }
-  }
+  if (STATE.showChart) refreshView();
+  else closeChartModal();
 }
 function renderChart(actuals, depotArg, nobudget) {
   if (!STATE.showChart) return;
-  const cs = document.getElementById('chart-section');
-  cs.style.display = 'block';
+  document.getElementById('chart-modal').style.display = 'flex';
   if (STATE.chartInstance) STATE.chartInstance.destroy();
   const labels = SPEND_GROUPS.map(g => g.name);
   const aData = SPEND_GROUPS.map(g => actuals[g.name]||0);
@@ -668,6 +679,8 @@ function initEventHandlers() {
     const td = e.target.closest('[data-group]');
     if (td) openDrillModal(td.dataset.group, td.dataset.depot);
   });
+  document.getElementById('chart-modal-close').addEventListener('click', closeChartModal);
+  document.getElementById('chart-modal').addEventListener('click', e => { if (e.target.id === 'chart-modal') closeChartModal(); });
   document.getElementById('drill-modal-close').addEventListener('click', closeDrillModal);
   document.getElementById('drill-modal').addEventListener('click', e => {
     if (e.target.id === 'drill-modal') closeDrillModal();
