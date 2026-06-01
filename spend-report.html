@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spend Report</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: system-ui, sans-serif; }
+  .drop-zone {
+    border: 2px dashed #94a3b8;
+    border-radius: 8px;
+    padding: 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #f8fafc;
+  }
+  .drop-zone:hover, .drop-zone.drop-active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+  .drop-zone.loaded {
+    border-color: #22c55e;
+    background: #f0fdf4;
+  }
+  .tab-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn.active {
+    background: #1e40af;
+    color: #fff;
+    border-color: #1e40af;
+  }
+  .tab-btn:hover:not(.active) { background: #f1f5f9; }
+  .report-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .report-table th {
+    background: #1e3a5f;
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    white-space: nowrap;
+  }
+  .report-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    white-space: nowrap;
+  }
+  .report-table tr:hover td { background: #f0f9ff; }
+  .report-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .report-table th.num { text-align: right; }
+  .report-table tr.total-row td {
+    font-weight: 700;
+    background: #f1f5f9;
+    border-top: 2px solid #94a3b8;
+  }
+  .clickable-actual { cursor: pointer; text-decoration: underline; text-decoration-color: #93c5fd; }
+  .clickable-actual:hover { color: #1d4ed8; }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 50; display: flex; align-items: flex-start;
+    justify-content: center; padding-top: 60px;
+  }
+  .modal-box {
+    background: #fff; border-radius: 10px; width: 92%; max-width: 1100px;
+    max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-body { overflow-y: auto; flex: 1; }
+  .modal-body::-webkit-scrollbar { width: 6px; }
+  .modal-body::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+  .card {
+    background: #fff; border-radius: 8px; padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08); min-width: 160px;
+  }
+  .card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+  .card .value { font-size: 22px; font-weight: 700; color: #1e293b; margin-top: 4px; }
+  .matrix-scroll { overflow-x: auto; }
+  select, input[type=file] { font-size: 13px; }
+  #spend-chart { max-height: 300px; }
+</style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div id="app" class="max-w-screen-2xl mx-auto px-4 py-5">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-800">Spend Report</h1>
+      <p class="text-sm text-slate-500">FY2027 · Upload spend pull and budget sheet to begin</p>
+    </div>
+    <div class="flex gap-2" id="upload-status">
+      <span id="badge-spend" class="px-3 py-1 rounded-full text-xs font-medium bg-slate-200 text-slate-600">Spend: not loaded</span>
+      <span id="badge-budget" class="px-3 py-1 rounded-full text-xs font-medium bg-slate-200 text-slate-600">Budget: not loaded</span>
+    </div>
+  </header>
+
+  <!-- Upload -->
+  <section id="upload-section" class="grid grid-cols-2 gap-4 mb-5">
+    <div class="drop-zone" id="spend-drop-zone" onclick="document.getElementById('spend-file-input').click()">
+      <div class="text-3xl mb-2">📂</div>
+      <div class="font-semibold text-slate-700" id="spend-drop-label">Drop Spend Pull here</div>
+      <div class="text-xs text-slate-400 mt-1">Excel (.xlsx) · columns A–AG</div>
+      <input type="file" id="spend-file-input" accept=".xlsx,.xls,.csv" class="hidden">
+    </div>
+    <div class="drop-zone" id="budget-drop-zone" onclick="document.getElementById('budget-file-input').click()">
+      <div class="text-3xl mb-2">💰</div>
+      <div class="font-semibold text-slate-700" id="budget-drop-label">Drop Budget Sheet here</div>
+      <div class="text-xs text-slate-400 mt-1">Excel (.xlsx) · depots across row 1, spend groups in col A</div>
+      <input type="file" id="budget-file-input" accept=".xlsx,.xls,.csv" class="hidden">
+    </div>
+  </section>
+
+  <!-- Controls -->
+  <section id="controls-bar" class="flex flex-wrap items-center gap-3 mb-5 bg-white rounded-lg px-4 py-3 shadow-sm">
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-semibold text-slate-600 uppercase">Period</label>
+      <select id="period-select" class="border border-slate-300 rounded px-2 py-1">
+        <option value="all">All Periods</option>
+      </select>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-xs font-semibold text-slate-600 uppercase">Week</label>
+      <select id="week-select" class="border border-slate-300 rounded px-2 py-1" disabled>
+        <option value="all">All Weeks</option>
+      </select>
+    </div>
+    <div class="flex gap-2 ml-4" id="view-tabs">
+      <button class="tab-btn active" id="tab-overall">Overall</button>
+      <button class="tab-btn" id="tab-by-depot">By Depot</button>
+      <button class="tab-btn" id="tab-matrix">All Depots Matrix</button>
+    </div>
+    <div class="flex items-center gap-2 ml-2" id="depot-selector" style="display:none!important">
+      <label class="text-xs font-semibold text-slate-600 uppercase">Depot</label>
+      <select id="depot-select" class="border border-slate-300 rounded px-2 py-1 max-w-xs"></select>
+    </div>
+  </section>
+
+  <!-- Summary cards -->
+  <section id="summary-cards" class="flex flex-wrap gap-4 mb-5">
+    <div class="card"><div class="label">Total Actual</div><div class="value" id="card-actual">—</div></div>
+    <div class="card"><div class="label">Total Budget</div><div class="value" id="card-budget">—</div></div>
+    <div class="card"><div class="label">Variance</div><div class="value" id="card-variance">—</div></div>
+    <div class="card"><div class="label">% of Budget</div><div class="value" id="card-pct">—</div></div>
+  </section>
+
+  <!-- Table -->
+  <section class="bg-white rounded-lg shadow-sm mb-5">
+    <div id="table-container" class="overflow-x-auto p-4">
+      <p class="text-slate-400 text-sm text-center py-10">Upload both files to generate the spend report.</p>
+    </div>
+  </section>
+
+  <!-- Chart -->
+  <section class="bg-white rounded-lg shadow-sm p-4 mb-5" id="chart-section" style="display:none">
+    <h2 class="text-sm font-semibold text-slate-600 uppercase mb-3">Actual vs Budget by Spend Group</h2>
+    <canvas id="spend-chart"></canvas>
+  </section>
+
+</div>
+
+<!-- Drill-down modal -->
+<div id="drill-modal" style="display:none" class="modal-overlay">
+  <div class="modal-box">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+      <h3 class="font-semibold text-slate-800 text-sm" id="drill-modal-title">Transactions</h3>
+      <button id="drill-modal-close" class="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none">&times;</button>
+    </div>
+    <div class="modal-body px-4 py-3" id="drill-modal-table-container">
+      <p class="text-slate-400 text-sm">Loading…</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATE = {
+  spendRows: [], budgetMap: {}, depots: [],
+  selectedPeriod: 'all', selectedWeek: 'all',
+  activeView: 'overall', selectedDepot: null,
+  chartInstance: null
+};
+
+const SPEND_GROUPS = [
+  { name: 'Store Materials',        codes: ['331010','331011','331015','331016'] },
+  { name: 'Major Units',            codes: ['331020','331021'] },
+  { name: '3rd Party Maintenance',  codes: ['331018'] },
+  { name: 'Lubricants',             codes: ['331030'] },
+  { name: 'Loose tools',            codes: ['331034'] },
+  { name: 'Cont Maintenance',       codes: [] },
+  { name: 'Vehicle Tow & Recovery', codes: ['331041'] },
+  { name: 'Repaints',               codes: ['331029'] },
+  { name: 'Refurbishments',         codes: [] },
+  { name: 'Accident',               codes: ['331022','331026'] },
+  { name: 'Vandalism',              codes: ['331024','331028'] },
+  { name: 'Glass',                  codes: ['331023'] },
+  { name: 'Plant Repairs',          codes: ['331051','331055','331057','331058'] },
+  { name: 'Engineering Cleaning',   codes: [] },
+  { name: 'Insurance Recoveries',   codes: [] },
+  { name: 'Other Engineering',      codes: ['331092','331097','331098'] }
+];
+
+const CODE_TO_GROUP = {};
+SPEND_GROUPS.forEach(g => g.codes.forEach(c => CODE_TO_GROUP[c] = g.name));
+
+const PERIODS = [
+  { label:'P1',  start:new Date(2026,2,29),  end:new Date(2026,3,25),  weeks:4 },
+  { label:'P2',  start:new Date(2026,3,26),  end:new Date(2026,4,23),  weeks:4 },
+  { label:'P3',  start:new Date(2026,4,24),  end:new Date(2026,5,27),  weeks:5 },
+  { label:'P4',  start:new Date(2026,5,28),  end:new Date(2026,6,25),  weeks:4 },
+  { label:'P5',  start:new Date(2026,6,26),  end:new Date(2026,7,22),  weeks:4 },
+  { label:'P6',  start:new Date(2026,7,23),  end:new Date(2026,8,26),  weeks:5 },
+  { label:'P7',  start:new Date(2026,8,27),  end:new Date(2026,9,24),  weeks:4 },
+  { label:'P8',  start:new Date(2026,9,25),  end:new Date(2026,10,21), weeks:4 },
+  { label:'P9',  start:new Date(2026,10,22), end:new Date(2026,11,26), weeks:5 },
+  { label:'P10', start:new Date(2026,11,27), end:new Date(2027,0,23),  weeks:4 },
+  { label:'P11', start:new Date(2027,0,24),  end:new Date(2027,1,20),  weeks:4 },
+  { label:'P12', start:new Date(2027,1,21),  end:new Date(2027,2,27),  weeks:5 }
+];
+
+function normKey(s) { return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+function fmtGBP(v) { return '£' + Number(v||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function parseDDMMYYYY(s) {
+  if (!s) return null;
+  if (typeof s === 'number') {
+    const d = XLSX.SSF.parse_date_code(s);
+    return d ? new Date(d.y, d.m-1, d.d) : null;
+  }
+  const p = String(s).split('/');
+  if (p.length === 3) return new Date(+p[2], +p[1]-1, +p[0]);
+  return new Date(s);
+}
+function getGroupForCode(code) { return CODE_TO_GROUP[String(code||'')] || null; }
+function getPeriodObj(label) { return PERIODS.find(p => p.label === label) || null; }
+function getWeeksInPeriod(label) { const p = getPeriodObj(label); return p ? p.weeks : 5; }
+function weekWithinPeriod(date, periodLabel) {
+  const p = getPeriodObj(periodLabel);
+  if (!p || !date) return 1;
+  return Math.min(Math.floor((date - p.start) / 86400000 / 7) + 1, p.weeks);
+}
+
+function parseSpendFile(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[19] && !r[12]) continue;
+    out.push({
+      transactionType: r[0], postingDate: parseDDMMYYYY(r[1]),
+      transactionNumber: r[2], transactionLine: r[3],
+      fiscalYear: r[4], period: +r[5] || 0,
+      fromCode: r[6], toCode: r[7], poDocType: r[8],
+      companyCode: r[9], opcoDesc: r[10],
+      costCentre: r[11], ccDesc: String(r[12]||'').trim(),
+      plImpact: String(r[13]||'').trim(), plDesc: r[14],
+      balanceSheetCode: r[15], balanceSheetDesc: r[16],
+      unit: r[17], transactionQty: +r[18]||0,
+      transactionValue: +r[19]||0,
+      plant: r[20], store: r[21], part: r[22], partDesc: r[23],
+      mtlGroup: r[24], mtlGroupDesc: r[25],
+      fleetNumber: r[26], po: r[27], poLine: r[28], bin: r[29],
+      originator: r[30], workOrder: r[31], poLineType: r[32]
+    });
+  }
+  return out;
+}
+
+function parseBudgetFile(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+  const map = {};
+  const headers = rows[0] || [];
+  for (let i = 1; i < rows.length; i++) {
+    const groupKey = normKey(rows[i][0]);
+    if (!groupKey) continue;
+    for (let c = 1; c < headers.length; c++) {
+      const depotKey = normKey(headers[c]);
+      if (!depotKey) continue;
+      if (!map[depotKey]) map[depotKey] = {};
+      map[depotKey][groupKey] = +rows[i][c] || 0;
+    }
+  }
+  return map;
+}
+
+function getBudget(depotName, groupName, periodLabel, weekSel) {
+  const dk = normKey(depotName), gk = normKey(groupName);
+  const wv = (STATE.budgetMap[dk] || {})[gk] || 0;
+  if (weekSel !== 'all') return wv;
+  if (periodLabel === 'all') return wv * 52;
+  return wv * getWeeksInPeriod(periodLabel);
+}
+
+function filterRows(rows, periodLabel, weekSel) {
+  let r = rows;
+  if (periodLabel !== 'all') {
+    const pn = +periodLabel.replace('P','');
+    r = r.filter(x => x.period === pn);
+    if (weekSel !== 'all') {
+      const wn = +weekSel;
+      r = r.filter(x => weekWithinPeriod(x.postingDate, periodLabel) === wn);
+    }
+  }
+  return r;
+}
+
+function aggregateByGroup(filteredRows, depotFilter) {
+  const totals = {};
+  SPEND_GROUPS.forEach(g => totals[g.name] = 0);
+  filteredRows.forEach(r => {
+    if (depotFilter && r.ccDesc !== depotFilter) return;
+    const g = getGroupForCode(r.plImpact);
+    if (g) totals[g] += r.transactionValue;
+  });
+  return totals;
+}
+
+function aggregateByDepotAndGroup(filteredRows) {
+  const map = {};
+  filteredRows.forEach(r => {
+    if (!map[r.ccDesc]) {
+      map[r.ccDesc] = {};
+      SPEND_GROUPS.forEach(g => map[r.ccDesc][g.name] = 0);
+    }
+    const g = getGroupForCode(r.plImpact);
+    if (g) map[r.ccDesc][g] += r.transactionValue;
+  });
+  return map;
+}
+function varStyle(actual, budget) {
+  if (!budget) return '';
+  return actual > budget ? 'style="color:#dc2626"' : 'style="color:#16a34a"';
+}
+
+function buildActualBudgetTable(groupActuals, depotArg) {
+  let totalActual = 0, totalBudget = 0;
+  let rows = '';
+  SPEND_GROUPS.forEach(g => {
+    const actual = groupActuals[g.name] || 0;
+    const budget = getBudget(depotArg || '__ALL__', g.name, STATE.selectedPeriod, STATE.selectedWeek);
+    const variance = actual - budget;
+    const pct = budget ? (actual / budget * 100) : null;
+    totalActual += actual; totalBudget += budget;
+    const vs = varStyle(actual, budget);
+    rows += `<tr>
+      <td class="text-slate-700 font-medium">${g.name}</td>
+      <td class="num clickable-actual" data-group="${g.name}" data-depot="${depotArg||'all'}">${fmtGBP(actual)}</td>
+      <td class="num">${budget ? fmtGBP(budget) : '<span class="text-slate-300">—</span>'}</td>
+      <td class="num" ${vs}>${budget ? fmtGBP(variance) : '<span class="text-slate-300">—</span>'}</td>
+      <td class="num" ${vs}>${pct !== null ? pct.toFixed(1)+'%' : '<span class="text-slate-300">—</span>'}</td>
+    </tr>`;
+  });
+  const vsTot = varStyle(totalActual, totalBudget);
+  const totPct = totalBudget ? (totalActual/totalBudget*100).toFixed(1)+'%' : '—';
+  rows += `<tr class="total-row">
+    <td>TOTAL</td>
+    <td class="num">${fmtGBP(totalActual)}</td>
+    <td class="num">${fmtGBP(totalBudget)}</td>
+    <td class="num" ${vsTot}>${fmtGBP(totalActual-totalBudget)}</td>
+    <td class="num" ${vsTot}>${totPct}</td>
+  </tr>`;
+  return { html: `<table class="report-table"><thead><tr>
+    <th>Spend Group</th><th class="num">Actual</th><th class="num">Budget</th>
+    <th class="num">Variance</th><th class="num">% Budget</th>
+  </tr></thead><tbody>${rows}</tbody></table>`, totalActual, totalBudget };
+}
+
+function renderOverallTable(filteredRows) {
+  const actuals = aggregateByGroup(filteredRows, null);
+  const result = buildActualBudgetTable(actuals, null);
+  document.getElementById('table-container').innerHTML = result.html;
+  renderSummaryCards(result.totalActual, result.totalBudget);
+  renderChart(actuals, null);
+}
+
+function renderByDepotTable(filteredRows) {
+  const depot = STATE.selectedDepot;
+  if (!depot) return;
+  const actuals = aggregateByGroup(filteredRows, depot);
+  const result = buildActualBudgetTable(actuals, depot);
+  document.getElementById('table-container').innerHTML = result.html;
+  renderSummaryCards(result.totalActual, result.totalBudget);
+  renderChart(actuals, depot);
+}
+
+function renderMatrixTable(filteredRows) {
+  const depotMap = aggregateByDepotAndGroup(filteredRows);
+  const depots = STATE.depots;
+  let totalActual = 0;
+  let headCols = '<th>Spend Group</th>' + depots.map(d => `<th class="num">${d}</th>`).join('') + '<th class="num">Total</th>';
+  let bodyRows = '';
+  SPEND_GROUPS.forEach(g => {
+    let rowTotal = 0;
+    const cells = depots.map(d => {
+      const v = (depotMap[d] || {})[g.name] || 0;
+      rowTotal += v;
+      return `<td class="num clickable-actual" data-group="${g.name}" data-depot="${d}">${v ? fmtGBP(v) : '<span class="text-slate-300">—</span>'}</td>`;
+    }).join('');
+    totalActual += rowTotal;
+    bodyRows += `<tr><td class="font-medium text-slate-700">${g.name}</td>${cells}<td class="num font-semibold">${rowTotal ? fmtGBP(rowTotal) : '—'}</td></tr>`;
+  });
+  const totCells = depots.map(d => {
+    const v = Object.values(depotMap[d]||{}).reduce((a,b)=>a+b,0);
+    return `<td class="num font-bold">${fmtGBP(v)}</td>`;
+  }).join('');
+  bodyRows += `<tr class="total-row"><td>TOTAL</td>${totCells}<td class="num font-bold">${fmtGBP(totalActual)}</td></tr>`;
+  document.getElementById('table-container').innerHTML = `<div class="matrix-scroll"><table class="report-table"><thead><tr>${headCols}</tr></thead><tbody>${bodyRows}</tbody></table></div>`;
+  renderSummaryCards(totalActual, 0);
+  renderChart(aggregateByGroup(filteredRows, null), null, true);
+}
+
+function renderSummaryCards(totalActual, totalBudget) {
+  const variance = totalActual - totalBudget;
+  const pct = totalBudget ? (totalActual/totalBudget*100).toFixed(1)+'%' : '—';
+  document.getElementById('card-actual').textContent = fmtGBP(totalActual);
+  document.getElementById('card-budget').textContent = totalBudget ? fmtGBP(totalBudget) : '—';
+  const vc = document.getElementById('card-variance');
+  vc.textContent = totalBudget ? fmtGBP(variance) : '—';
+  vc.style.color = totalBudget ? (variance > 0 ? '#dc2626' : '#16a34a') : '';
+  document.getElementById('card-pct').textContent = pct;
+}
+
+function renderChart(actuals, depotArg, nobudget) {
+  const cs = document.getElementById('chart-section');
+  cs.style.display = '';
+  if (STATE.chartInstance) STATE.chartInstance.destroy();
+  const labels = SPEND_GROUPS.map(g => g.name);
+  const aData = SPEND_GROUPS.map(g => actuals[g.name]||0);
+  const datasets = [{ label:'Actual', data: aData, backgroundColor:'rgba(37,99,235,0.7)' }];
+  if (!nobudget) {
+    const bData = SPEND_GROUPS.map(g => getBudget(depotArg||'__ALL__', g.name, STATE.selectedPeriod, STATE.selectedWeek));
+    datasets.push({ label:'Budget', data: bData, backgroundColor:'rgba(148,163,184,0.7)' });
+  }
+  STATE.chartInstance = new Chart(document.getElementById('spend-chart'), {
+    type:'bar',
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{ position:'top' } },
+      scales:{
+        x:{ ticks:{ maxRotation:45, font:{ size:10 } } },
+        y:{ ticks:{ callback: v => '£'+Number(v).toLocaleString('en-GB') } }
+      }
+    }
+  });
+}
+
+function openDrillModal(groupName, depotName) {
+  const filtered = filterRows(STATE.spendRows, STATE.selectedPeriod, STATE.selectedWeek);
+  const rows = filtered.filter(r => {
+    const g = getGroupForCode(r.plImpact);
+    if (g !== groupName) return false;
+    if (depotName && depotName !== 'all') return r.ccDesc === depotName;
+    return true;
+  });
+  document.getElementById('drill-modal-title').textContent = groupName + (depotName && depotName !== 'all' ? ' — ' + depotName : ' — All Depots') + ' (' + rows.length + ' transactions)';
+  if (!rows.length) {
+    document.getElementById('drill-modal-table-container').innerHTML = '<p class="text-slate-400 text-sm py-6 text-center">No transactions found for this selection.</p>';
+  } else {
+    const tRows = rows.map(r => `<tr>
+      <td>${r.postingDate ? r.postingDate.toLocaleDateString('en-GB') : ''}</td>
+      <td>${r.ccDesc||''}</td><td>${r.part||''}</td>
+      <td class="max-w-xs truncate">${r.partDesc||''}</td>
+      <td>${r.fleetNumber||''}</td><td>${r.workOrder||''}</td>
+      <td>${r.originator||''}</td>
+      <td class="num">${r.transactionQty||''}</td>
+      <td class="num">${fmtGBP(r.transactionValue)}</td>
+    </tr>`).join('');
+    document.getElementById('drill-modal-table-container').innerHTML = `<table class="report-table"><thead><tr>
+      <th>Date</th><th>Depot</th><th>Part</th><th>Description</th>
+      <th>Fleet</th><th>Work Order</th><th>Originator</th><th class="num">Qty</th><th class="num">Value</th>
+    </tr></thead><tbody>${tRows}</tbody></table>`;
+  }
+  document.getElementById('drill-modal').style.display = 'flex';
+}
+
+function closeDrillModal() { document.getElementById('drill-modal').style.display = 'none'; }
+
+function updateWeekOptions(periodLabel) {
+  const ws = document.getElementById('week-select');
+  ws.innerHTML = '<option value="all">All Weeks</option>';
+  if (periodLabel === 'all') { ws.disabled = true; STATE.selectedWeek = 'all'; return; }
+  ws.disabled = false;
+  const n = getWeeksInPeriod(periodLabel);
+  for (let i = 1; i <= n; i++) ws.innerHTML += `<option value="${i}">Week ${i}</option>`;
+  STATE.selectedWeek = 'all';
+}
+
+function populateDepotSelect() {
+  STATE.depots = [...new Set(STATE.spendRows.map(r => r.ccDesc).filter(Boolean))].sort();
+  const sel = document.getElementById('depot-select');
+  sel.innerHTML = STATE.depots.map(d => `<option value="${d}">${d}</option>`).join('');
+  STATE.selectedDepot = STATE.depots[0] || null;
+  const ps = document.getElementById('period-select');
+  ps.innerHTML = '<option value="all">All Periods</option>' + PERIODS.map(p => `<option value="${p.label}">${p.label}</option>`).join('');
+}
+
+function refreshView() {
+  if (!STATE.spendRows.length) return;
+  const filtered = filterRows(STATE.spendRows, STATE.selectedPeriod, STATE.selectedWeek);
+  if (STATE.activeView === 'overall') renderOverallTable(filtered);
+  else if (STATE.activeView === 'by-depot') renderByDepotTable(filtered);
+  else renderMatrixTable(filtered);
+}
+
+function handleFileLoad(file, type) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
+      if (type === 'spend') {
+        STATE.spendRows = parseSpendFile(wb);
+        document.getElementById('spend-drop-label').textContent = file.name + ' (' + STATE.spendRows.length + ' rows)';
+        document.getElementById('spend-drop-zone').classList.add('loaded');
+        document.getElementById('badge-spend').textContent = 'Spend: ' + STATE.spendRows.length + ' rows';
+        document.getElementById('badge-spend').className = 'px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700';
+        populateDepotSelect();
+      } else {
+        STATE.budgetMap = parseBudgetFile(wb);
+        document.getElementById('budget-drop-label').textContent = file.name + ' (loaded)';
+        document.getElementById('budget-drop-zone').classList.add('loaded');
+        document.getElementById('badge-budget').textContent = 'Budget: loaded';
+        document.getElementById('badge-budget').className = 'px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700';
+      }
+      refreshView();
+    } catch(err) { alert('Error parsing file: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setActiveTab(view) {
+  STATE.activeView = view;
+  ['overall','by-depot','matrix'].forEach(v => {
+    document.getElementById('tab-'+v).classList.toggle('active', v === view);
+  });
+  const ds = document.getElementById('depot-selector');
+  ds.style.cssText = view === 'by-depot' ? '' : 'display:none!important';
+}
+
+function initEventHandlers() {
+  document.getElementById('spend-file-input').addEventListener('change', e => {
+    if (e.target.files[0]) handleFileLoad(e.target.files[0], 'spend');
+  });
+  document.getElementById('budget-file-input').addEventListener('change', e => {
+    if (e.target.files[0]) handleFileLoad(e.target.files[0], 'budget');
+  });
+  ['spend','budget'].forEach(type => {
+    const dz = document.getElementById(type+'-drop-zone');
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drop-active'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drop-active'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drop-active');
+      const f = e.dataTransfer.files[0];
+      if (f) handleFileLoad(f, type);
+    });
+  });
+  document.getElementById('period-select').addEventListener('change', e => {
+    STATE.selectedPeriod = e.target.value;
+    updateWeekOptions(e.target.value);
+    refreshView();
+  });
+  document.getElementById('week-select').addEventListener('change', e => {
+    STATE.selectedWeek = e.target.value === 'all' ? 'all' : +e.target.value;
+    refreshView();
+  });
+  document.getElementById('tab-overall').addEventListener('click', () => { setActiveTab('overall'); refreshView(); });
+  document.getElementById('tab-by-depot').addEventListener('click', () => { setActiveTab('by-depot'); refreshView(); });
+  document.getElementById('tab-matrix').addEventListener('click', () => { setActiveTab('matrix'); refreshView(); });
+  document.getElementById('depot-select').addEventListener('change', e => {
+    STATE.selectedDepot = e.target.value; refreshView();
+  });
+  document.getElementById('table-container').addEventListener('click', e => {
+    const td = e.target.closest('[data-group]');
+    if (td) openDrillModal(td.dataset.group, td.dataset.depot);
+  });
+  document.getElementById('drill-modal-close').addEventListener('click', closeDrillModal);
+  document.getElementById('drill-modal').addEventListener('click', e => {
+    if (e.target.id === 'drill-modal') closeDrillModal();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initEventHandlers);
+</script>
+</body>
+</html>
