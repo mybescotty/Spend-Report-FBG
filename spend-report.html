@@ -469,6 +469,7 @@ function openDrillModal(groupName, depotName) {
   if (!rows.length) {
     document.getElementById('drill-modal-table-container').innerHTML = '<p class="text-slate-400 text-sm py-6 text-center">No transactions found for this selection.</p>';
   } else {
+    rows.sort((a, b) => b.transactionValue - a.transactionValue);
     const tRows = rows.map(r => `<tr>
       <td>${r.postingDate ? r.postingDate.toLocaleDateString('en-GB') : ''}</td>
       <td>${r.ccDesc||''}</td><td>${r.part||''}</td>
