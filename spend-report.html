@@ -512,8 +512,25 @@ function updateWeekOptions(periodLabel) {
   STATE.selectedWeek = 'all';
 }
 
+const DEPOT_PINNED = [
+  'Bramley', 'Bradford', 'Halifax', 'Huddersfield', 'Hunslet Park',
+  'Doncaster', 'Olive Grove', 'Rochdale', 'Swansea', 'Cymru West', 'Cymru East'
+];
+function sortDepots(depots) {
+  const pinIdx = d => {
+    const k = normKey(d);
+    const i = DEPOT_PINNED.findIndex(p => k.startsWith(normKey(p)));
+    return i === -1 ? Infinity : i;
+  };
+  return [...depots].sort((a, b) => {
+    const ia = pinIdx(a), ib = pinIdx(b);
+    if (ia !== ib) return ia - ib;
+    return a.localeCompare(b);
+  });
+}
 function populateDepotSelect() {
-  STATE.depots = [...new Set(STATE.spendRows.map(r => resolveDepot(r.ccDesc)).filter(Boolean))].sort();
+  const raw = [...new Set(STATE.spendRows.map(r => resolveDepot(r.ccDesc)).filter(Boolean))];
+  STATE.depots = sortDepots(raw);
   const sel = document.getElementById('depot-select');
   sel.innerHTML = STATE.depots.map(d => `<option value="${d}">${d}</option>`).join('');
   STATE.selectedDepot = STATE.depots[0] || null;
