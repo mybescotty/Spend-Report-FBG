@@ -356,6 +356,7 @@ function getBudget(depotName, groupName, periodLabel, weekSel) {
 }
 function getBudgetTotal(groupName, periodLabel, weekSel) {
   return Object.keys(STATE.budgetMap).reduce((sum, dk) => {
+    if (!isOverviewDepot(dk)) return sum;
     const gk = normKey(groupName);
     const wv = (STATE.budgetMap[dk] || {})[gk] || 0;
     if (weekSel !== 'all') return sum + wv;
@@ -380,11 +381,10 @@ function filterRows(rows, periodLabel, weekSel) {
 function aggregateByGroup(filteredRows, depotFilter, onlyBudgeted) {
   const totals = {};
   SPEND_GROUPS.forEach(g => totals[g.name] = 0);
-  const budgetedKeys = onlyBudgeted ? new Set(Object.keys(STATE.budgetMap)) : null;
   filteredRows.forEach(r => {
     const resolved = resolveDepot(r.ccDesc);
     if (depotFilter && resolved !== depotFilter) return;
-    if (budgetedKeys && !budgetedKeys.has(normKey(resolved))) return;
+    if (onlyBudgeted && !isOverviewDepot(resolved)) return;
     const g = getGroupForCode(r.plImpact);
     if (g) totals[g] += r.transactionValue;
   });
@@ -548,7 +548,7 @@ function openDrillModal(groupName, depotName) {
     const g = getGroupForCode(r.plImpact);
     if (g !== groupName) return false;
     if (depotName && depotName !== 'all') return resolveDepot(r.ccDesc) === depotName;
-    return normKey(resolveDepot(r.ccDesc)) in STATE.budgetMap;
+    return isOverviewDepot(resolveDepot(r.ccDesc));
   });
   document.getElementById('drill-modal-title').textContent = groupName + (depotName && depotName !== 'all' ? ' — ' + depotName : ' — All Depots') + ' (' + rows.length + ' transactions)';
   if (!rows.length) {
@@ -588,6 +588,10 @@ const DEPOT_PINNED = [
   'Bramley', 'Bradford', 'Halifax', 'Huddersfield', 'Hunslet Park',
   'Doncaster', 'Olive Grove', 'Rochdale', 'Swansea', 'Cymru West', 'Cymru East'
 ];
+function isOverviewDepot(depotName) {
+  const k = normKey(depotName);
+  return DEPOT_PINNED.some(p => k.startsWith(normKey(p)));
+}
 function sortDepots(depots) {
   const pinIdx = d => {
     const k = normKey(d);
