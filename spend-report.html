@@ -54,9 +54,26 @@
     white-space: nowrap;
   }
   .report-table td {
-    padding: 6px 10px;
+    padding: 4px 10px;
     border-bottom: 1px solid #e2e8f0;
     white-space: nowrap;
+  }
+  #table-container {
+    overflow-y: auto;
+    overflow-x: auto;
+    max-height: calc(100vh - 270px);
+  }
+  #file-bar {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    background: #fff;
+    border-radius: 8px;
+    padding: 6px 14px;
+    margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+    font-size: 12px;
+    color: #475569;
   }
   .report-table tr:hover td { background: #f0f9ff; }
   .report-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -96,19 +113,24 @@
 <div id="app" class="max-w-screen-2xl mx-auto px-4 py-5">
 
   <!-- Header -->
-  <header class="flex items-center justify-between mb-5">
-    <div>
-      <h1 class="text-2xl font-bold text-slate-800">Spend Report</h1>
-      <p class="text-sm text-slate-500">FY2027 · Upload spend pull and budget sheet to begin</p>
-    </div>
+  <header class="flex items-center justify-between mb-2">
+    <h1 class="text-xl font-bold text-slate-800">Spend Report <span class="text-sm font-normal text-slate-400">FY2027</span></h1>
     <div class="flex gap-2" id="upload-status">
       <span id="badge-spend" class="px-3 py-1 rounded-full text-xs font-medium bg-slate-200 text-slate-600">Spend: not loaded</span>
       <span id="badge-budget" class="px-3 py-1 rounded-full text-xs font-medium bg-slate-200 text-slate-600">Budget: not loaded</span>
     </div>
   </header>
 
+  <!-- Compact file bar — shown after both files loaded -->
+  <div id="file-bar">
+    <span>📂 <strong id="file-bar-spend">—</strong></span>
+    <span class="text-slate-300">|</span>
+    <span>💰 <strong id="file-bar-budget">—</strong></span>
+    <button onclick="document.getElementById('upload-section').style.display='';document.getElementById('file-bar').style.display='none';" style="margin-left:auto;color:#3b82f6;font-size:12px;background:none;border:none;cursor:pointer;padding:0">Change files ↩</button>
+  </div>
+
   <!-- Upload -->
-  <section id="upload-section" class="grid grid-cols-2 gap-4 mb-5">
+  <section id="upload-section" class="grid grid-cols-2 gap-4 mb-2">
     <div class="drop-zone" id="spend-drop-zone" onclick="document.getElementById('spend-file-input').click()">
       <div class="text-3xl mb-2">📂</div>
       <div class="font-semibold text-slate-700" id="spend-drop-label">Drop Spend Pull here</div>
@@ -124,7 +146,7 @@
   </section>
 
   <!-- Controls -->
-  <section id="controls-bar" class="flex flex-wrap items-center gap-3 mb-5 bg-white rounded-lg px-4 py-3 shadow-sm">
+  <section id="controls-bar" class="flex flex-wrap items-center gap-3 mb-2 bg-white rounded-lg px-4 py-2 shadow-sm">
     <div class="flex items-center gap-2">
       <label class="text-xs font-semibold text-slate-600 uppercase">Period</label>
       <select id="period-select" class="border border-slate-300 rounded px-2 py-1">
@@ -149,16 +171,16 @@
   </section>
 
   <!-- Summary cards -->
-  <section id="summary-cards" class="flex flex-wrap gap-4 mb-5">
-    <div class="card"><div class="label">Total Actual</div><div class="value" id="card-actual">—</div></div>
-    <div class="card"><div class="label">Total Budget</div><div class="value" id="card-budget">—</div></div>
-    <div class="card"><div class="label">Variance</div><div class="value" id="card-variance">—</div></div>
-    <div class="card"><div class="label">% of Budget</div><div class="value" id="card-pct">—</div></div>
+  <section id="summary-cards" class="flex flex-wrap gap-3 mb-2">
+    <div class="card" style="padding:10px 16px"><div class="label">Total Actual</div><div class="value" style="font-size:18px" id="card-actual">—</div></div>
+    <div class="card" style="padding:10px 16px"><div class="label">Total Budget</div><div class="value" style="font-size:18px" id="card-budget">—</div></div>
+    <div class="card" style="padding:10px 16px"><div class="label">Variance</div><div class="value" style="font-size:18px" id="card-variance">—</div></div>
+    <div class="card" style="padding:10px 16px"><div class="label">% of Budget</div><div class="value" style="font-size:18px" id="card-pct">—</div></div>
   </section>
 
   <!-- Table -->
-  <section class="bg-white rounded-lg shadow-sm mb-5">
-    <div id="table-container" class="overflow-x-auto p-4">
+  <section class="bg-white rounded-lg shadow-sm mb-2">
+    <div id="table-container" class="p-3">
       <p class="text-slate-400 text-sm text-center py-10">Upload both files to generate the spend report.</p>
     </div>
   </section>
@@ -566,6 +588,13 @@ function handleFileLoad(file, type) {
         document.getElementById('badge-budget').className = 'px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700';
       }
       refreshView();
+      if (STATE.spendRows.length && Object.keys(STATE.budgetMap).length) {
+        document.getElementById('upload-section').style.display = 'none';
+        document.getElementById('file-bar-spend').textContent = STATE.spendRows.length + ' rows';
+        const bKeys = Object.keys(STATE.budgetMap).length;
+        document.getElementById('file-bar-budget').textContent = bKeys + ' depots';
+        document.getElementById('file-bar').style.display = 'flex';
+      }
     } catch(err) { alert('Error parsing file: ' + err.message); }
   };
   reader.readAsArrayBuffer(file);
