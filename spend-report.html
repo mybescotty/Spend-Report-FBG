@@ -229,7 +229,19 @@ const PERIODS = [
   { label:'P12', start:new Date(2027,1,21),  end:new Date(2027,2,27),  weeks:5 }
 ];
 
+const DEPOT_GROUPS = [
+  { displayName: 'Cymru West ENG', members: ['Tycroes ENG', 'Haverfordwest ENG'] },
+  { displayName: 'Cymru East ENG', members: ['Port Talbot ENG', 'Bridgend ENG'] }
+];
+
 function normKey(s) { return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
+function resolveDepot(ccDesc) {
+  const k = normKey(ccDesc);
+  for (const g of DEPOT_GROUPS) {
+    if (g.members.some(m => normKey(m) === k)) return g.displayName;
+  }
+  return ccDesc;
+}
 function fmtGBP(v) { return '£' + Number(v||0).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function parseDDMMYYYY(s) {
   if (!s) return null;
@@ -320,7 +332,7 @@ function aggregateByGroup(filteredRows, depotFilter) {
   const totals = {};
   SPEND_GROUPS.forEach(g => totals[g.name] = 0);
   filteredRows.forEach(r => {
-    if (depotFilter && r.ccDesc !== depotFilter) return;
+    if (depotFilter && resolveDepot(r.ccDesc) !== depotFilter) return;
     const g = getGroupForCode(r.plImpact);
     if (g) totals[g] += r.transactionValue;
   });
@@ -330,12 +342,13 @@ function aggregateByGroup(filteredRows, depotFilter) {
 function aggregateByDepotAndGroup(filteredRows) {
   const map = {};
   filteredRows.forEach(r => {
-    if (!map[r.ccDesc]) {
-      map[r.ccDesc] = {};
-      SPEND_GROUPS.forEach(g => map[r.ccDesc][g.name] = 0);
+    const depot = resolveDepot(r.ccDesc);
+    if (!map[depot]) {
+      map[depot] = {};
+      SPEND_GROUPS.forEach(g => map[depot][g.name] = 0);
     }
     const g = getGroupForCode(r.plImpact);
-    if (g) map[r.ccDesc][g] += r.transactionValue;
+    if (g) map[depot][g] += r.transactionValue;
   });
   return map;
 }
@@ -462,7 +475,7 @@ function openDrillModal(groupName, depotName) {
   const rows = filtered.filter(r => {
     const g = getGroupForCode(r.plImpact);
     if (g !== groupName) return false;
-    if (depotName && depotName !== 'all') return r.ccDesc === depotName;
+    if (depotName && depotName !== 'all') return resolveDepot(r.ccDesc) === depotName;
     return true;
   });
   document.getElementById('drill-modal-title').textContent = groupName + (depotName && depotName !== 'all' ? ' — ' + depotName : ' — All Depots') + ' (' + rows.length + ' transactions)';
@@ -500,7 +513,7 @@ function updateWeekOptions(periodLabel) {
 }
 
 function populateDepotSelect() {
-  STATE.depots = [...new Set(STATE.spendRows.map(r => r.ccDesc).filter(Boolean))].sort();
+  STATE.depots = [...new Set(STATE.spendRows.map(r => resolveDepot(r.ccDesc)).filter(Boolean))].sort();
   const sel = document.getElementById('depot-select');
   sel.innerHTML = STATE.depots.map(d => `<option value="${d}">${d}</option>`).join('');
   STATE.selectedDepot = STATE.depots[0] || null;
