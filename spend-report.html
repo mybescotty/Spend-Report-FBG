@@ -548,7 +548,7 @@ function openDrillModal(groupName, depotName) {
     const g = getGroupForCode(r.plImpact);
     if (g !== groupName) return false;
     if (depotName && depotName !== 'all') return resolveDepot(r.ccDesc) === depotName;
-    return true;
+    return normKey(resolveDepot(r.ccDesc)) in STATE.budgetMap;
   });
   document.getElementById('drill-modal-title').textContent = groupName + (depotName && depotName !== 'all' ? ' — ' + depotName : ' — All Depots') + ' (' + rows.length + ' transactions)';
   if (!rows.length) {
