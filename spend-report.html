@@ -354,6 +354,15 @@ function getBudget(depotName, groupName, periodLabel, weekSel) {
   if (periodLabel === 'all') return wv * 52;
   return wv * getWeeksInPeriod(periodLabel);
 }
+function getBudgetTotal(groupName, periodLabel, weekSel) {
+  return Object.keys(STATE.budgetMap).reduce((sum, dk) => {
+    const gk = normKey(groupName);
+    const wv = (STATE.budgetMap[dk] || {})[gk] || 0;
+    if (weekSel !== 'all') return sum + wv;
+    if (periodLabel === 'all') return sum + wv * 52;
+    return sum + wv * getWeeksInPeriod(periodLabel);
+  }, 0);
+}
 
 function filterRows(rows, periodLabel, weekSel) {
   let r = rows;
@@ -368,11 +377,14 @@ function filterRows(rows, periodLabel, weekSel) {
   return r;
 }
 
-function aggregateByGroup(filteredRows, depotFilter) {
+function aggregateByGroup(filteredRows, depotFilter, onlyBudgeted) {
   const totals = {};
   SPEND_GROUPS.forEach(g => totals[g.name] = 0);
+  const budgetedKeys = onlyBudgeted ? new Set(Object.keys(STATE.budgetMap)) : null;
   filteredRows.forEach(r => {
-    if (depotFilter && resolveDepot(r.ccDesc) !== depotFilter) return;
+    const resolved = resolveDepot(r.ccDesc);
+    if (depotFilter && resolved !== depotFilter) return;
+    if (budgetedKeys && !budgetedKeys.has(normKey(resolved))) return;
     const g = getGroupForCode(r.plImpact);
     if (g) totals[g] += r.transactionValue;
   });
@@ -402,7 +414,9 @@ function buildActualBudgetTable(groupActuals, depotArg) {
   let rows = '';
   SPEND_GROUPS.forEach(g => {
     const actual = groupActuals[g.name] || 0;
-    const budget = getBudget(depotArg || '__ALL__', g.name, STATE.selectedPeriod, STATE.selectedWeek);
+    const budget = depotArg === null
+      ? getBudgetTotal(g.name, STATE.selectedPeriod, STATE.selectedWeek)
+      : getBudget(depotArg, g.name, STATE.selectedPeriod, STATE.selectedWeek);
     const variance = actual - budget;
     const pct = budget ? (actual / budget * 100) : null;
     totalActual += actual; totalBudget += budget;
@@ -431,7 +445,7 @@ function buildActualBudgetTable(groupActuals, depotArg) {
 }
 
 function renderOverallTable(filteredRows) {
-  const actuals = aggregateByGroup(filteredRows, null);
+  const actuals = aggregateByGroup(filteredRows, null, true);
   const result = buildActualBudgetTable(actuals, null);
   document.getElementById('table-container').innerHTML = result.html;
   renderSummaryCards(result.totalActual, result.totalBudget);
@@ -509,7 +523,9 @@ function renderChart(actuals, depotArg, nobudget) {
   const aData = SPEND_GROUPS.map(g => actuals[g.name]||0);
   const datasets = [{ label:'Actual', data: aData, backgroundColor:'rgba(37,99,235,0.7)' }];
   if (!nobudget) {
-    const bData = SPEND_GROUPS.map(g => getBudget(depotArg||'__ALL__', g.name, STATE.selectedPeriod, STATE.selectedWeek));
+    const bData = SPEND_GROUPS.map(g => depotArg === null
+      ? getBudgetTotal(g.name, STATE.selectedPeriod, STATE.selectedWeek)
+      : getBudget(depotArg, g.name, STATE.selectedPeriod, STATE.selectedWeek));
     datasets.push({ label:'Budget', data: bData, backgroundColor:'rgba(148,163,184,0.7)' });
   }
   STATE.chartInstance = new Chart(document.getElementById('spend-chart'), {
